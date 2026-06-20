@@ -1,3 +1,15 @@
+---
+title: NoteGuard — NHS De-Identification Gate
+emoji: 🛡️
+colorFrom: blue
+colorTo: indigo
+sdk: docker
+app_port: 8501
+pinned: false
+license: mit
+short_description: Sanitise-at-source PII removal for NHS notes
+---
+
 # 🛡️ NoteGuard
 
 **Automatic PII sanitisation for NHS clinical notes — clean data in, no identifiers out.**
@@ -36,7 +48,7 @@ layer** Presidio leaves to you:
 ## Results — residual leakage drops as we layer detection
 
 *Known identifiers (joined from the structured tables) still present after sanitisation. Measured on all
-**1,602 notes** (1,027 known-PII occurrences). Reproduce with `python run_eval.py --compare`.*
+**1,602 notes** (1,027 known-PII occurrences). Reproduce with `python tests/run_eval.py --compare`.*
 
 | Detector | NHS number F1 | PERSON recall | **Residual leakage** |
 |---|---|---|---|

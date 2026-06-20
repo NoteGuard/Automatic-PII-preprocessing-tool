@@ -7,7 +7,7 @@ data leaves a Trust. Encode Club "Trusted Data & AI Infrastructure" hackathon; f
 ```bash
 # Setup (Windows PowerShell)
 python -m venv .venv; .\.venv\Scripts\Activate.ps1
-pip install -r requirements.txt; python -m spacy download en_core_web_lg
+pip install -e ".[app,dev]"; python -m spacy download en_core_web_lg
 
 python tests/run_eval.py --compare --limit 300   # VERIFIABLE SIGNAL: rules vs presidio+rules -> output/results.json
 python -m src.trust_demo                          # two NHS Trusts share only de-identified data -> output/
