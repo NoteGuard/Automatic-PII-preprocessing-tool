@@ -1,0 +1,10 @@
+presidio-analyzer
+presidio-anonymizer
+spacy>=3.7,<3.9
+faker
+ftfy
+huggingface_hub
+pandas
+streamlit
+gradio
+pytest
