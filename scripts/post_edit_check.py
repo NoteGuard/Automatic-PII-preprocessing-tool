@@ -1,11 +1,11 @@
 """PostToolUse hook: re-run the de-identification tests after edits to the scrubbing logic.
 
-Wired in `.claude/settings.json`. The team guide's lesson is "verify everything" — recognizers and
+Wired in `.claude/settings.json`. The team guide's lesson is "verify everything" — recognisers and
 anonymisation operators are exactly where a silent regression would let PII leak, so we re-check them
 on every edit.
 
 Safe by design:
-- Only acts on edits to `src/recognizers/` or `src/anonymize.py`; otherwise exits 0 silently.
+- Only acts on edits to the scrubbing modules in `src/`; otherwise exits 0 silently.
 - Gated behind the `PII_ENABLE_HOOK=1` env var so it never disrupts an unrelated session or a
   half-installed environment. Turn it on once the venv + tests exist.
 - Exits 0 (never blocks) if the venv or pytest is missing.
@@ -19,7 +19,7 @@ import sys
 from pathlib import Path
 
 REPO = Path(__file__).resolve().parent.parent
-WATCHED = ("noteguard/recognizers.py", "noteguard/detect.py", "noteguard/transform.py")
+WATCHED = ("src/recognisers.py", "src/detect.py", "src/transform.py")
 
 
 def main() -> int:

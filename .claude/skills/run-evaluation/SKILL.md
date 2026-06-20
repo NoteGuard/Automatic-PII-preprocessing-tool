@@ -7,8 +7,8 @@ description: How to run the NoteGuard evaluation (detection P/R/F1 + residual le
 The eval is the project's pass/fail signal — it proves sanitisation actually removes PII, with numbers.
 
 1. Data: either `NOTEGUARD_DATA_DIR=<folder with the 3 CSVs>` (offline) or let it auto-download from HF.
-2. Run `python run_eval.py --compare --limit 300` (use a larger `--limit` for the headline; `--method
-   pseudonym` to measure leakage under pseudonymisation). Writes `results.json`.
+2. Run `python tests/run_eval.py --compare --limit 300` (use a larger `--limit` for the headline;
+   `--method pseudonym` to measure leakage under pseudonymisation). Writes `output/results.json`.
 3. It joins each note to its patient/admission record (the EVAL-ONLY oracle) to get ground truth, then
    reports, per detector:
    - **detection P / R / F1** per entity type (precision is a conservative lower bound — removing PII
@@ -18,7 +18,7 @@ The eval is the project's pass/fail signal — it proves sanitisation actually r
 ## How to read it
 - `--compare` prints two rows: **rules** → **presidio+rules** (the shipping detector). The leakage
   should drop sharply between them.
-- Watch residual leakage as the headline. If it regresses after a change to `noteguard/recognizers.py`,
+- Watch residual leakage as the headline. If it regresses after a change to `src/recognisers.py`,
   `detect.py`, or `transform.py`, fix it before continuing.
 
 Log anything that didn't work in `experiments/FAILED.md`.

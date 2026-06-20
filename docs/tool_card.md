@@ -31,7 +31,7 @@ NoteGuard is a **de-identification gate** for free-text NHS clinical notes. It d
 | Patient name (`PERSON`) | spaCy `en_core_web_lg` NER | 100% recall in benchmarks |
 | NHS number (`UK_NHS`) | Regex + Modulus-11 checksum + 9-digit context anchor | Catches both standard and synthetic dataset forms |
 | Date of birth (`DATE_TIME`) | Presidio + date regex | 100% recall |
-| Site / hospital name (`LOCATION`, `ORGANIZATION`) | spaCy NER + rule-based suffix anchor | "X Hospital / Infirmary / NHS Trust" patterns |
+| Site / hospital name (`LOCATION`) | spaCy NER + rule-based suffix anchor | "X Hospital / Infirmary / NHS Trust" patterns (ORGANIZATION is excluded — it over-tags labels) |
 | UK postcode (`UK_POSTCODE`) | Regex | Outward-code only after pseudonymisation |
 | Clinician GMC / NMC (`GMC`, `NMC`) | Context-anchored regex | "GMC 1234567", "NMC PIN 12A3456B" |
 | ODS org code (`NHS_ODS`) | Context-anchored regex | "ODS A12345", "Practice Code A12345" |
@@ -92,7 +92,7 @@ This matches the real NHS Information Governance workflow and makes the tool's a
 - **Pseudonymised data is still personal data** under UK GDPR — the vault is the re-identification key and must stay Trust-local.
 - **Precision is a conservative lower bound**: clinician names and unlisted locations correctly detected count as false positives in the evaluation (ground truth is patient-table-only).
 - **Not clinically validated**: evaluated on the `NHSEDataScience/synthetic_clinical_notes` dataset. Real deployment requires validation on representative Trust data.
-- **Clinical transformer models** (e.g. `obi/deid_roberta_i2b2`) were tested and performed worse on UK names than `en_core_web_lg` (i2b2 training data is US-centric). See `experiments/FAILED.md`.
+- **Clinical transformer models** (e.g. `obi/deid_roberta_i2b2`) were tested and performed worse on UK names than `en_core_web_lg` (i2b2 training data is US-centric).
 
 ---
 

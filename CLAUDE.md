@@ -9,29 +9,29 @@ data leaves a Trust. Encode Club "Trusted Data & AI Infrastructure" hackathon; f
 python -m venv .venv; .\.venv\Scripts\Activate.ps1
 pip install -r requirements.txt; python -m spacy download en_core_web_lg
 
-python run_eval.py --compare --limit 300   # VERIFIABLE SIGNAL: rules vs presidio+rules -> results.json
-python -m noteguard.trust_demo             # two NHS Trusts share only de-identified data -> data/out/
-streamlit run app/streamlit_app.py         # demo (Try-it / Metrics / Governance / Two-Trust)
+python tests/run_eval.py --compare --limit 300   # VERIFIABLE SIGNAL: rules vs presidio+rules -> output/results.json
+python -m src.trust_demo                          # two NHS Trusts share only de-identified data -> output/
+streamlit run streamlit_app.py                    # demo (Try-it / Metrics / Governance / Two-Trust)
 python -m pytest tests/ -v
 
 # Offline data: set NOTEGUARD_DATA_DIR to a folder holding the 3 CSVs (else auto-downloaded from HF).
 ```
 
 ## Architecture
-- `noteguard/` — `data` (load + ground-truth join, EVAL-ONLY oracle) · `recognizers` (pure-Python
+- `src/` — `data` (load + ground-truth join, EVAL-ONLY oracle) · `recognisers` (pure-Python
   rules) · `detect` (Rule / Presidio, graceful fallback) · `transform`
   (redact | patient-consistent pseudonymise + date-shift, Faker) · `evaluate` (P/R/F1 + residual
   leakage) · `pipeline` · `trust_demo`.
-- `run_eval.py` CLI · `app/streamlit_app.py` demo · `tests/` mirror `noteguard/`.
+- `tests/run_eval.py` CLI · `streamlit_app.py` demo · `tests/` mirror `src/`. Packaged via `pyproject.toml`.
 
 ## Code style
 - Python 3.10+, type hints on function signatures. The pure-Python rule layer must stay importable
   WITHOUT spaCy/Presidio (the fallback path). snake_case / PascalCase.
 
 ## Data rules (treat the synthetic notes as if real NHS PHI)
-- `data/raw/`, `data/out/`, and any vault export are gitignored — never commit. Never paste note text
+- `data/raw/`, `output/`, and any vault export are gitignored — never commit. Never paste note text
   into prompts; point at file paths.
-- The note→patient join (`noteguard/data.py` ground truth) is the EVAL-ONLY oracle. It must NEVER feed
+- The note→patient join (`src/data.py` ground truth) is the EVAL-ONLY oracle. It must NEVER feed
   detection/transform — that is data leakage and invalidates the metric.
 - Never silently fall back to an older/cached dataset — fail loudly.
 
@@ -54,6 +54,5 @@ python -m pytest tests/ -v
 - Default spaCy model is now `en_core_web_lg`; the `PII_SPACY_MODEL` env var still overrides.
 
 ## Working with Claude
-- After editing `noteguard/recognizers.py` / `detect.py` / `transform.py`, run
-  `python run_eval.py --compare` and check residual leakage didn't regress. Log dead ends in
-  `experiments/FAILED.md`.
+- After editing `src/recognisers.py` / `detect.py` / `transform.py`, run
+  `python tests/run_eval.py --compare` and check residual leakage didn't regress.

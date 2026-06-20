@@ -1,6 +1,12 @@
 """Rule-layer recognisers: NHS checksum + the folded-in NHS/staff/org identifiers."""
-from noteguard.recognizers import (
-    GMC, NHS_ODS, NMC, RECORD_ID, UK_NHS, find_rule_spans, nhs_number_is_valid,
+from src.recognisers import (
+    GMC,
+    NHS_ODS,
+    NMC,
+    RECORD_ID,
+    UK_NHS,
+    find_rule_spans,
+    nhs_number_is_valid,
 )
 
 
@@ -39,10 +45,10 @@ def test_record_uuid():
 
 
 def test_uk_nino():
-    from noteguard.recognizers import UK_NINO
+    from src.recognisers import UK_NINO
     assert UK_NINO in _types("NI: AB 12 34 56 C")
 
 
 def test_uk_vehicle_registration():
-    from noteguard.recognizers import UK_VEHICLE_REGISTRATION
+    from src.recognisers import UK_VEHICLE_REGISTRATION
     assert UK_VEHICLE_REGISTRATION in _types("vehicle AB12 CDE")
