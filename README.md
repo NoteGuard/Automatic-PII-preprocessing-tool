@@ -1,79 +1,101 @@
-# 🛡️ NHS De-Identification Gate
+# 🛡️ NoteGuard
 
-**Trusted Data & AI Infrastructure — Encode Club hackathon.**
-*How can organisations collaborate on AI without sharing sensitive data?*
+**Automatic PII sanitisation for NHS clinical notes — clean data in, no identifiers out.**
 
-Free-text clinical notes are the hardest NHS data to share, because identifiers are buried in prose.
-This tool is a **de-identification gate**: it detects and removes patient/clinician PII *inside* each
-NHS Trust, so only de-identified text ever leaves. That's the missing on-ramp to an **NHS Secure Data
-Environment (SDE) / Trusted Research Environment** — the "code comes to the data, data never leaves"
-model behind OpenSAFELY and the NHS Federated Data Platform — and the privacy layer that makes
-cross-Trust / federated AI (e.g. FLock.io) safe.
+NoteGuard discovers, inspects, redacts and de-identifies PII in free-text NHS clinical notes **before**
+the data is used to train any model. It runs **locally at each institution** ("sanitise at source"), so
+every Trust cleans its own data inside its own governance boundary before anything is shared or used in
+collaborative / federated training.
 
-Built on **Microsoft Presidio** + **spaCy**, evaluated on
-[NHSEDataScience/synthetic_clinical_notes](https://huggingface.co/datasets/NHSEDataScience/synthetic_clinical_notes).
+> Federated learning lets institutions train without moving data. NoteGuard is the **privacy-preserving
+> on-ramp** that makes the data safe to train on in the first place — the missing layer in front of an
+> NHS Secure Data Environment / the Federated Data Platform / FLock.io.
 
-## Headline result (verifiable)
+Encode Club hackathon — *Trusted Data & AI Infrastructure*. Built on **Microsoft Presidio** + **spaCy**,
+evaluated on [NHSEDataScience/synthetic_clinical_notes](https://huggingface.co/datasets/NHSEDataScience/synthetic_clinical_notes).
 
-```
-python -m src.evaluate        # all 1,602 notes
-→ Leakage test: PASS ✅  |  overall recall 100.0%  |  0 identifier leaks
-   recall by type: names 100% · NHS number 100% · DOB 100% · place 100% · record-id 100%
-```
+## What makes this more than "just Presidio"
 
-We don't hand-annotate. Each note links (`person_id`/`admission_id`) to a patient + admission record
-holding the real (synthetic) identifiers — a **free ground-truth oracle**. The metric is *detection
-coverage*: every known identifier occurring in a raw note must sit inside a detected span (and so be
-removed). It's mode-independent, so it can't be gamed by pseudonymisation.
+Presidio is the detection **engine** — we don't reinvent it. NoteGuard is the **clinical assurance
+layer** Presidio leaves to you:
+
+1. **Measured residual leakage.** Because the dataset keeps PII in structured tables, we join them back
+   to each note for free ground truth and report a real **re-identification risk** number — not a vibe.
+2. **Domain adaptation to messy clinical text.** NHS-aware recognisers: checksum-validated NHS numbers
+   **plus** context-anchored detection for the dataset's 9-digit synthetic numbers Presidio's `UK_NHS`
+   misses, plus GMC/NMC clinician IDs, ODS org codes and record UUIDs.
+3. **Patient-consistent, longitudinal de-identification.** Same patient → same surrogate across their
+   whole admission journey, with each patient's dates shifted by one consistent offset so clinical
+   intervals survive — *useful* data, not just safe data. Realistic en_GB fakes (or `[TYPE]` redaction).
+4. **Pluggable + degrades gracefully.** One `Detector` interface (Rule / Presidio / Gazetteer /
+   Composite); the pure-Python rule layer + eval run even if spaCy/Presidio are unavailable.
+5. **Governance wrapper.** Per-note audit of what was removed + the dataset-level leakage report,
+   mapped to the NHS **Five Safes**.
+
+## Results — residual leakage drops as we layer detection
+
+*Known identifiers (joined from the structured tables) still present after sanitisation. Measured on all
+**1,602 notes** (1,027 known-PII occurrences). Reproduce with `python run_eval.py --compare`.*
+
+| Detector | NHS number F1 | PERSON recall | **Residual leakage** |
+|---|---|---|---|
+| rules only | 0.98 | 0.00 | **74.8 %** |
+| **presidio + rules** (shipping) | **0.99** | **0.68** | **8.5 %** |
+| presidio + rules + Trust roster | 0.99 | 0.73 | **0.10 %** (1 / 1027) |
+
+The rules→engine→roster drop is the headline: it shows, with numbers, exactly what each layer buys you.
+
+> Precision is reported against *structured* PII only, so it is a conservative lower bound — correctly
+> removing a clinician's name (not in the tables) counts here as a false positive. **Recall and leakage
+> are the sound, headline metrics.** The roster/gazetteer is seeded from a Trust's known patient list,
+> so it's reported as an optional recall-lift layer, kept out of the headline to avoid circularity.
 
 ## Architecture
 
 ```
-                 ┌──────────────────── inside Trust A ────────────────────┐
- raw notes ──►   │  ftfy clean ─► Presidio Analyzer ─► Anonymiser ─► audit │  ──► de-identified
- (PHI)           │     spaCy NER + UK/NHS recognizers   redact|pseudonymise│       text + audit log
-                 │     + Trust roster (deny-list)        (Faker, vault)     │       (no PHI leaves)
-                 └────────────────────────────────────────────────────────┘
-        same gate runs inside Trust B ──►  ┌─────────────────────────┐
-                                           │  shared de-identified pool │ ──► federated AI / FLock.io
-                                           └─────────────────────────┘
+                 ┌──────────────────── inside Trust A ─────────────────────┐
+ raw notes ──►   │  fix mojibake ─► detect (Presidio NER + rules +roster)   │ ──► de-identified
+ (PHI)           │                  ─► transform (redact | pseudonymise)    │     text + audit log
+                 │                     patient-consistent + date-shift, vault│     (no PHI leaves)
+                 └─────────────────────────────────────────────────────────┘
+        same gate runs inside Trust B ──►  ┌────────────────────────────┐
+                                           │  shared de-identified pool  │ ──► federated AI / FLock.io
+                                           └────────────────────────────┘
 ```
 
-**Detection (two layers):**
-- *Presidio built-ins:* `PERSON`, `DATE_TIME`, `LOCATION`, `ORGANIZATION`, `NRP`, `PHONE_NUMBER`,
-  `EMAIL_ADDRESS`, `UK_NHS`, …
-- *Custom NHS layer (`src/recognizers/`):* NHS number with **Modulus-11** checksum (+ the dataset's
-  9-digit/comma forms), `UK_POSTCODE`/`UK_NINO`/`UK_PASSPORT`/`UK_VEHICLE_REGISTRATION` (not shipped in
-  this Presidio version), GMC/NMC clinician IDs, ODS org codes, record UUIDs, and a **Trust roster**
-  deny-list (the legitimate hybrid: NER generalises, the roster guarantees known identifiers are caught).
-
-**Anonymisation (`src/anonymize.py`), per-entity policy:**
-- **Pseudonymise** (default) — consistent Faker(en_GB) fakes via a Trust-local vault; valid fake NHS
-  numbers; postcode → outward code; dates shifted by one consistent offset (intervals preserved).
-- **Redact** — `<ENTITY_TYPE>` tags. `NRP` (special-category) is always redacted, never synthesised.
+`noteguard/` — `data` (load + ground-truth join, **eval-only oracle**) · `recognizers` (pure-Python
+rules: NHS checksum/context, postcode, date, phone, email, GMC/NMC/ODS, UUID) · `detect`
+(`RuleDetector` / `PresidioDetector` / `GazetteerDetector` / `CompositeDetector`) · `transform`
+(redaction | patient-consistent pseudonymisation + date-shift, Faker vault) · `evaluate` (P/R/F1 +
+residual leakage) · `pipeline` · `trust_demo`.
 
 ## Trust & governance — mapped to the NHS Five Safes
-- **Safe data** — de-identified to DAPB1523/ICO standard across the full entity set.
-- **Safe settings** — runs inside the Trust; raw CSVs + vault are gitignored, never leave.
-- **Safe outputs** — only de-identified text + content-free audit logs; leakage test gates at **0**.
-- **Safe people/projects** — vault (re-id key) stays Trust-local; pseudonymised data is still personal
-  data under UK GDPR — stated honestly, no over-claim.
+- **Safe data** — PII removed to DAPB1523/ICO standard across patient + staff + org identifiers.
+- **Safe settings** — runs inside the Trust; raw CSVs and the vault are gitignored, never leave.
+- **Safe outputs** — only de-identified text + content-free audit logs; the measured leakage gates them.
+- **Safe people / projects** — the re-identification vault stays Trust-local; pseudonymised data is
+  still personal data under UK GDPR — stated honestly, no over-claim.
 
 ## Run it
 
 ```bash
 python -m venv .venv; .\.venv\Scripts\Activate.ps1      # Windows PowerShell
 pip install -r requirements.txt
-python -m spacy download en_core_web_sm                 # PII_SPACY_MODEL=en_core_web_lg for more recall
+python -m spacy download en_core_web_sm
 
-python -m src.load_data        # download + ftfy-clean the dataset
-python -m src.evaluate         # the leakage test (0 leaks, 100% recall)
-python -m src.trust_demo       # two NHS Trusts share only de-identified data
-streamlit run app/streamlit_app.py   # demo UI: Try-it · Metrics · Governance · Two-Trust
+python run_eval.py --compare --limit 300   # reproduce the table → results.json
+python -m noteguard.trust_demo             # two NHS Trusts share only de-identified data → data/out/
+streamlit run app/streamlit_app.py         # full demo: Try-it · Metrics · Governance · Two-Trust
+python app_gradio.py                        # lightweight Gradio demo
 python -m pytest tests/ -v
 ```
 
-## Layout
-`src/` — `load_data` (oracle) · `analyzer` · `recognizers/` · `anonymize` · `pipeline` · `evaluate` ·
-`trust_demo`. `app/streamlit_app.py` — demo. `tests/` — checksum, recognizers, pseudonym consistency,
-end-to-end leakage. Built with Claude Code (`CLAUDE.md`, `.claude/`).
+The dataset is pulled automatically on first run. To run fully offline, drop the three CSVs in a
+folder and set `NOTEGUARD_DATA_DIR=/path/to/csvs`.
+
+## Data notes (found by inspecting the data, not assuming)
+- NHS numbers in this synthetic set are **9 digits** (real ones are 10 + mod-11 check). We catch both:
+  checksum-validated 10-digit anywhere, **and** context-anchored numbers after an "NHS …" label.
+- Some fields are double-encoded (`Â·`); `_fix_mojibake` repairs them so they don't pollute ground truth.
+
+Built with Claude Code (`CLAUDE.md`, `.claude/`).

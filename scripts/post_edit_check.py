@@ -19,7 +19,7 @@ import sys
 from pathlib import Path
 
 REPO = Path(__file__).resolve().parent.parent
-WATCHED = ("src/recognizers", "src/anonymize.py")
+WATCHED = ("noteguard/recognizers.py", "noteguard/detect.py", "noteguard/transform.py")
 
 
 def main() -> int:
@@ -37,12 +37,12 @@ def main() -> int:
 
     venv_python = REPO / ".venv" / "Scripts" / "python.exe"
     python = str(venv_python) if venv_python.exists() else sys.executable
-    test_file = REPO / "tests" / "test_leakage.py"
-    if not test_file.exists():
+    tests_dir = REPO / "tests"
+    if not tests_dir.exists():
         return 0
 
     result = subprocess.run(
-        [python, "-m", "pytest", str(test_file), "-q"],
+        [python, "-m", "pytest", str(tests_dir), "-q"],
         cwd=str(REPO),
         capture_output=True,
         text=True,

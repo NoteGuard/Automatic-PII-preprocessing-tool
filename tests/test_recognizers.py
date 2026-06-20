@@ -1,36 +1,38 @@
-"""Custom recognizers fire on their target identifiers (pattern recognizers need no NLP artifacts)."""
-from src.config import GMC, NHS_ODS, NMC
-from src.recognizers import build_roster_recognizers, name_terms
-from src.recognizers.clinician_ids import gmc_recognizer, nmc_recognizer
-from src.recognizers.ods_code import ods_recognizer
+"""Rule-layer recognisers: NHS checksum + the folded-in NHS/staff/org identifiers."""
+from noteguard.recognizers import (
+    GMC, NHS_ODS, NMC, RECORD_ID, UK_NHS, find_rule_spans, nhs_number_is_valid,
+)
 
 
-def _entities(recognizer, text, entity):
-    return recognizer.analyze(text=text, entities=[entity], nlp_artifacts=None)
+def _types(text: str) -> set[str]:
+    return {s.entity_type for s in find_rule_spans(text)}
 
 
-def test_gmc_labelled():
-    results = _entities(gmc_recognizer(), "Reviewed by Dr Patel, GMC 1234567.", GMC)
-    assert any(r.score >= 0.5 for r in results)
+def test_nhs_checksum_valid():
+    assert nhs_number_is_valid("943 476 5919")
+    assert nhs_number_is_valid("9434765919")
 
 
-def test_nmc_pin():
-    results = _entities(nmc_recognizer(), "Nurse PIN 99I1234E on shift.", NMC)
-    assert results and any(r.entity_type == NMC for r in results)
+def test_nhs_checksum_invalid():
+    assert not nhs_number_is_valid("943 476 5918")  # bad check digit
+    assert not nhs_number_is_valid("123")           # wrong length
 
 
-def test_ods_practice_code():
-    results = _entities(ods_recognizer(), "Registered at practice code P81026.", NHS_ODS)
-    assert any(r.score >= 0.5 for r in results)
+def test_context_anchored_9_digit_nhs():
+    # 9-digit synthetic NHS number — only catchable via the "NHS ..." context anchor
+    assert UK_NHS in _types("Patient NHS Number: 272 733 208 admitted to ward")
 
 
-def test_name_terms_explodes_surname_first():
-    terms = name_terms("Wells, Judith Ada")
-    assert {"Wells", "Judith", "Ada"} <= terms
+def test_clinician_and_org_ids():
+    text = "Seen by Dr Lee GMC 1234567, nurse NMC 12A3456B, practice code P81026."
+    t = _types(text)
+    assert GMC in t and NMC in t and NHS_ODS in t
 
 
-def test_roster_recognizer_matches_known_name():
-    recs = build_roster_recognizers(person_names=["Wells, Judith Ada"], place_names=["Ward 12"])
-    person_rec = next(r for r in recs if r.supported_entities == ["PERSON"])
-    results = person_rec.analyze(text="Spoke with Judith about discharge.", entities=["PERSON"], nlp_artifacts=None)
-    assert results
+def test_postcode_date_email_phone():
+    text = "Lives SW1A 1AA, dob 12/03/1981, email a@b.com, tel 07700 900123."
+    assert {"UK_POSTCODE", "DATE_TIME", "EMAIL_ADDRESS", "PHONE_NUMBER"} <= _types(text)
+
+
+def test_record_uuid():
+    assert RECORD_ID in _types("note 550e8400-e29b-41d4-a716-446655440000 created")

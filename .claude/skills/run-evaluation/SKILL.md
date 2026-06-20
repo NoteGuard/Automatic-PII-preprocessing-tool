@@ -1,23 +1,26 @@
 ---
 name: run-evaluation
-description: How to run the de-identification evaluation (known-PII recall + leakage test) and read it
+description: How to run the NoteGuard evaluation (detection P/R/F1 + residual leakage) and read it
 ---
 # Running the evaluation
 
-The eval is the project's pass/fail signal — it proves the de-identification gate actually scrubs PII.
+The eval is the project's pass/fail signal — it proves sanitisation actually removes PII, with numbers.
 
-1. Ensure the dataset is present: `python -m src.load_data` (writes `data/raw/`).
-2. Run `python -m src.evaluate` (optionally `--policy redact|pseudonymise`, `--limit N`).
-3. It builds ground truth by joining each note to its patient/admission record (the EVAL-ONLY oracle),
-   then for every known identifier present in the raw note checks whether it survives anonymisation.
+1. Data: either `NOTEGUARD_DATA_DIR=<folder with the 3 CSVs>` (offline) or let it auto-download from HF.
+2. Run `python run_eval.py --compare --limit 300` (use a larger `--limit` for the headline; `--method
+   pseudonym` to measure leakage under pseudonymisation). Writes `results.json`.
+3. It joins each note to its patient/admission record (the EVAL-ONLY oracle) to get ground truth, then
+   reports, per detector:
+   - **detection P / R / F1** per entity type (precision is a conservative lower bound — removing PII
+     that isn't in the tables, e.g. clinician names, counts as a false positive).
+   - **residual leakage** = known identifiers still present after sanitisation. This is the headline.
 
-## How to read the result (`data/out/metrics.json` + console)
-- **`leaks` must be 0.** A leak = a patient's real name / NHS number / DOB still present verbatim in the
-  de-identified output. Any leak is a hard fail — fix the recognizer or policy before continuing.
-- **`recall` per entity type** = fraction of present identifiers that were scrubbed. Higher is better;
-  compare against the previous run. Names are the hardest (NER misses "Surname, First" forms) — the
-  roster recognizer in `src/recognizers/roster.py` is the backstop.
-- **`throughput`** = notes/sec, for the "runs inside a Trust at scale" story.
+## How to read it
+- `--compare` prints three rows: **rules** → **presidio+rules** (the shipping detector) →
+  **presidio+rules+roster** (optional gazetteer). The leakage should drop sharply across them.
+- Watch residual leakage as the headline. If it regresses after a change to `noteguard/recognizers.py`,
+  `detect.py`, or `transform.py`, fix it before continuing.
+- Keep the roster/gazetteer OUT of the headline claim — it's seeded from known values, so it's an
+  optional recall-lift layer, reported separately.
 
-If `leaks > 0` or recall drops: inspect `src/recognizers/` and the policy map in `src/config.py`,
-adjust, re-run. Log anything that didn't work in `experiments/FAILED.md`.
+Log anything that didn't work in `experiments/FAILED.md`.

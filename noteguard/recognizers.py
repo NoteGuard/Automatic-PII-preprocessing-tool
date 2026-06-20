@@ -4,6 +4,10 @@ These give NoteGuard a transparent, auditable baseline that runs anywhere, and
 let the evaluation harness work even before the (heavier) NER engine is wired up.
 The NHS-number recogniser validates the mod-11 check digit so random 10-digit
 strings (dose volumes, IDs) aren't flagged as patient identifiers.
+
+The NHS staff / organisation rules below (GMC & NMC clinician IDs, ODS org codes,
+record UUIDs) were folded in from the Presidio branch so the rule layer also
+covers people who aren't patients — Caldicott/DPA apply to anyone identifiable.
 """
 from __future__ import annotations
 
@@ -15,6 +19,10 @@ from .data import DATE, LOCATION, PERSON, UK_NHS  # noqa: F401  (re-exported typ
 EMAIL = "EMAIL_ADDRESS"
 PHONE = "PHONE_NUMBER"
 POSTCODE = "UK_POSTCODE"
+GMC = "GMC"              # General Medical Council number (UK doctors)
+NMC = "NMC"              # Nursing & Midwifery Council PIN
+NHS_ODS = "NHS_ODS"      # NHS Organisation Data Service codes (GP practices, trusts)
+RECORD_ID = "RECORD_ID"  # record/document UUIDs that act as quasi-identifiers
 
 
 @dataclass(frozen=True)
@@ -53,15 +61,34 @@ _NHS_CTX_RE = re.compile(
 _EMAIL_RE = re.compile(r"\b[\w.+-]+@[\w-]+\.[\w.-]+\b")
 _PHONE_RE = re.compile(r"\b(?:\+?44\s?|0)(?:\d\s?){9,10}\b")
 # UK postcode (simplified but standard) e.g. SW1A 1AA, M1 1AE
-_POSTCODE_RE = re.compile(
-    r"\b[A-Z]{1,2}\d[A-Z\d]?\s*\d[A-Z]{2}\b", re.IGNORECASE
-)
+_POSTCODE_RE = re.compile(r"\b[A-Z]{1,2}\d[A-Z\d]?\s*\d[A-Z]{2}\b", re.IGNORECASE)
 _DATE_RE = re.compile(
     r"\b(\d{1,2}[/-]\d{1,2}[/-]\d{2,4}"
     r"|\d{4}-\d{2}-\d{2}"
     r"|\d{1,2}\s+(?:Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)[a-z]*\.?\s+\d{2,4})\b",
     re.IGNORECASE,
 )
+# --- NHS staff / organisation identifiers (context-anchored to avoid noise) ---
+_GMC_RE = re.compile(r"(?i)\bGMC(?:\s*(?:no|number|#))?[:\s#]*(\d{7})\b")
+_NMC_RE = re.compile(r"(?i)\bNMC(?:\s*pin)?[:\s#]*(\d{2}[A-Z]\d{4}[A-Z])\b")
+_NMC_BARE_RE = re.compile(r"\b(\d{2}[A-Z]\d{4}[A-Z])\b")  # specific enough to stand alone
+_ODS_RE = re.compile(r"(?i)\b(?:ODS|practice\s*code)[:\s]*([A-Z]\d{5})\b")
+_UUID_RE = re.compile(
+    r"\b([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})\b", re.IGNORECASE
+)
+
+# (regex, entity_type, capture_group): group 0 = whole match, 1 = inner capture
+_PLAIN = [
+    (_EMAIL_RE, EMAIL, 0),
+    (_PHONE_RE, PHONE, 0),
+    (_POSTCODE_RE, POSTCODE, 0),
+    (_DATE_RE, DATE, 0),
+    (_GMC_RE, GMC, 1),
+    (_NMC_RE, NMC, 1),
+    (_NMC_BARE_RE, NMC, 1),
+    (_ODS_RE, NHS_ODS, 1),
+    (_UUID_RE, RECORD_ID, 1),
+]
 
 
 def find_rule_spans(text: str) -> list[Span]:
@@ -74,14 +101,9 @@ def find_rule_spans(text: str) -> list[Span]:
     for m in _NHS_CTX_RE.finditer(text):
         spans.append(Span(m.start(1), m.end(1), UK_NHS, m.group(1)))
 
-    for regex, etype in (
-        (_EMAIL_RE, EMAIL),
-        (_PHONE_RE, PHONE),
-        (_POSTCODE_RE, POSTCODE),
-        (_DATE_RE, DATE),
-    ):
+    for regex, etype, grp in _PLAIN:
         for m in regex.finditer(text):
-            spans.append(Span(m.start(), m.end(), etype, m.group()))
+            spans.append(Span(m.start(grp), m.end(grp), etype, m.group(grp)))
 
     return _dedupe(spans)
 
@@ -101,6 +123,7 @@ if __name__ == "__main__":
     # quick check: 9434765919 is a documented valid NHS test number
     assert nhs_number_is_valid("943 476 5919"), "valid NHS number rejected"
     assert not nhs_number_is_valid("943 476 5918"), "bad check digit accepted"
-    demo = "NHS no 943 476 5919, ring 07700 900123, dob 12/03/1981, SW1A 1AA."
+    demo = ("NHS no 943 476 5919, ring 07700 900123, dob 12/03/1981, SW1A 1AA, "
+            "seen by Dr Lee GMC 1234567, nurse NMC 12A3456B.")
     for sp in find_rule_spans(demo):
         print(sp)

@@ -11,8 +11,8 @@ from __future__ import annotations
 import argparse
 import json
 
-from noteguard.data import load_notes
-from noteguard.detect import RuleDetector, build_detector
+from noteguard.data import load_notes, roster_terms
+from noteguard.detect import CompositeDetector, GazetteerDetector, RuleDetector, build_detector
 from noteguard.evaluate import EvalResult, evaluate
 from noteguard.transform import REDACTION
 
@@ -51,9 +51,16 @@ def main() -> None:
         print("\n=== rules-only ===")
         runs["rules"] = evaluate(records, RuleDetector(), args.method)
         _print_summary(runs["rules"])
-        print("\n=== presidio+rules ===")
-        runs["presidio+rules"] = evaluate(records, build_detector(True), args.method)
+        print("\n=== presidio+rules (shipping headline detector) ===")
+        presidio = build_detector(True)
+        runs["presidio+rules"] = evaluate(records, presidio, args.method)
         _print_summary(runs["presidio+rules"])
+        # Optional recall-lift layer: the Trust roster as a gazetteer. Reported
+        # separately and NOT the headline, because it's seeded from known values.
+        print("\n=== presidio+rules+roster (optional gazetteer layer) ===")
+        roster_det = CompositeDetector(presidio, GazetteerDetector(roster_terms(records)))
+        runs["presidio+rules+roster"] = evaluate(records, roster_det, args.method)
+        _print_summary(runs["presidio+rules+roster"])
     else:
         det = RuleDetector() if args.no_presidio else build_detector(True)
         res = evaluate(records, det, args.method)
