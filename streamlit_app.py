@@ -41,7 +41,7 @@ st.set_page_config(page_title="NoteGuard", page_icon="🛡️", layout="wide")
 def load_engine():
     detector = build_detector(use_presidio=True)
     try:
-        notes = load_notes(limit=80)
+        notes = load_notes(limit=50)
     except Exception:
         notes = []
     return detector, notes
@@ -103,8 +103,8 @@ with tab_try:
         source = st.radio("Input", ["Sample note", "Paste your own"])
     with c1:
         if source == "Sample note" and NOTES:
-            idx = st.number_input("Note index", 0, len(NOTES) - 1, 0, step=1)
-            rec = NOTES[int(idx)]
+            idx = st.number_input("Note index", 1, len(NOTES), 1, step=1)
+            rec = NOTES[int(idx) - 1]
             text, person_id = rec.text, rec.person_id
         else:
             text = st.text_area("Clinical note (messy free-text)", height=200,
