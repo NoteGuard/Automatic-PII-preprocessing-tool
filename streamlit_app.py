@@ -194,7 +194,7 @@ with tab_metrics:
             "detected correctly are counted as false positives."
         )
     else:
-        st.info("No metrics yet — click **Run evaluation** or run `python run_eval.py --compare`.")
+        st.info("No metrics yet — click **Run evaluation** above.")
 
 # ---------------------------------------------------------------- Governance
 with tab_gov:
@@ -252,7 +252,6 @@ NHS Trust (raw notes)
         each Trust trains locally; only model gradients are shared
 ```
     """)
-    st.caption("See `docs/tool_card.md` for the one-page governance summary.")
 
 # ---------------------------------------------------------------- Two-Trust
 with tab_trust:
@@ -286,4 +285,4 @@ with tab_trust:
             st.metric("Total residual leaks", summary["total_residual_leaks"])
             st.caption("→ ready for federated AI / FLock.io")
     else:
-        st.info("Click **Run two-Trust demo** or run `python -m src.trust_demo`.")
+        st.info("Click **Run two-Trust demo** above.")
