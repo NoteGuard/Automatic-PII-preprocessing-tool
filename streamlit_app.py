@@ -187,9 +187,9 @@ with st.sidebar:
         else:
             st.info("Set `LLM_ASSURE_API_KEY` (a free key) as a secret to enable. "
                     "Off until then — the engine runs deterministically.")
-    method = st.radio("De-identification", [PSEUDONYM, REDACTION],
-                      format_func=lambda m: "Pseudonymise (realistic, patient-consistent)"
-                      if m == PSEUDONYM else "Redact ([type] tags)")
+    method = st.radio("De-identification", [REDACTION, PSEUDONYM],
+                      format_func=lambda m: "Redact ([type] tags)" if m == REDACTION
+                      else "Pseudonymise (realistic, patient-consistent)")
 
 det, llm_on = active_detector(detector, use_llm)
 
