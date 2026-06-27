@@ -29,7 +29,7 @@ from src.detect import ComposedDetector, build_detector  # noqa: E402
 from src.ingest import SUPPORTED, csv_columns, records_from_upload  # noqa: E402
 from src.llm_assure import LLMAssurance  # noqa: E402
 from src.pipeline import Pipeline  # noqa: E402
-from src.transform import PSEUDONYM, REDACTION, PseudonymVault  # noqa: E402
+from src.transform import PSEUDONYM, REDACTION, PseudonymVault, redaction_label  # noqa: E402
 
 ENTITY_COLORS = {
     "PERSON": "#ffd6e0", "UK_NHS": "#ffe9b3", "DATE_TIME": "#d4f4dd", "UK_POSTCODE": "#cfe8ff",
@@ -115,20 +115,28 @@ def render_single(text: str, method: str, detector, person_id: str, note_id: str
     st.markdown(f"##### 2) Sanitised output — `{method}`")
     scroll_box(html.escape(result.sanitised).replace("\n", "<br>"))
 
-    st.markdown("##### 3) Audit log (counts only — no raw values leave the gate)")
-    confirmed = [s for s in result.spans if not s.needs_review]
-    counts = Counter(s.entity_type for s in confirmed)
-    st.dataframe({"entity": list(counts), "auto-removed": list(counts.values())},
-                 hide_index=True, use_container_width=True)
+    st.markdown("##### 3) Identifiers removed")
+    pii_bar_chart(Counter(s.entity_type for s in result.spans))
 
     if result.review_items:
         st.warning(
-            f"**Human review required — {len(result.review_items)} low-confidence detection(s)**\n\n"
-            "These spans were redacted for safety but confidence was below the auto-confirm "
+            f"**Human review suggested — {len(result.review_items)} low-confidence detection(s)**\n\n"
+            "These spans were removed for safety but confidence was below the auto-confirm "
             "threshold (this includes any LLM-assurance hits). A reviewer should confirm them."
         )
     else:
         st.success("All detections auto-confirmed (score >= threshold). No human review needed.")
+
+    with st.expander("Review what changed before you download", expanded=False):
+        if result.replacements:
+            st.dataframe(
+                [{"type": redaction_label(r.entity_type), "original": r.original,
+                  "replacement": r.replacement} for r in result.replacements],
+                hide_index=True, use_container_width=True,
+            )
+            st.caption("Shown only in your browser session — the original text is never stored.")
+        else:
+            st.caption("No identifiers were found, so nothing was changed.")
 
     st.markdown("##### 4) Download this de-identified note")
     one = [{"note_id": note_id, "method": method, "sanitised_text": result.sanitised}]
@@ -141,11 +149,12 @@ def render_single(text: str, method: str, detector, person_id: str, note_id: str
                        use_container_width=True)
 
 
-def deidentify_rows(records, method: str, detector) -> list[dict]:
+def deidentify_rows(records, method: str, detector) -> tuple[list[dict], Counter]:
     """De-identify many (record_id, text[, person_id]) records with one shared vault
-    (patient-consistent). Returns rows of sanitised text only — no PHI."""
+    (patient-consistent). Returns (rows of sanitised text only — no PHI, counts by type)."""
     pipe = Pipeline(detector, PseudonymVault())
-    rows = []
+    rows: list[dict] = []
+    counts: Counter = Counter()
     for r in records:
         if isinstance(r, tuple):                      # (record_id, text) from the catalog
             rid, text, pid = r[0], r[1], r[0]
@@ -155,9 +164,30 @@ def deidentify_rows(records, method: str, detector) -> list[dict]:
             text = r.text
         if not text or not text.strip():
             continue
-        rows.append({"record_id": rid, "method": method,
-                     "sanitised_text": pipe.sanitise(text, method, pid).sanitised})
-    return rows
+        res = pipe.sanitise(text, method, pid)
+        rows.append({"record_id": rid, "method": method, "sanitised_text": res.sanitised})
+        counts.update(s.entity_type for s in res.spans)
+    return rows, counts
+
+
+def pii_bar_chart(counts: Counter):
+    """Human-friendly bar chart of how many identifiers were detected, by type."""
+    total = sum(counts.values())
+    if not total:
+        st.info("No identifiers detected.")
+        return
+    st.markdown(f"**{total} identifier{'s' if total != 1 else ''} detected**")
+    df = pd.DataFrame({"detected": list(counts.values())},
+                      index=[redaction_label(e) for e in counts]).sort_values("detected")
+    st.bar_chart(df, color="#005EB8", horizontal=True)
+
+
+def render_batch_result(rows: list[dict], counts: Counter, stem: str):
+    """Chart + reviewable preview + downloads for a de-identified batch."""
+    pii_bar_chart(counts)
+    with st.expander("Review the de-identified output before you download (first 10 rows)"):
+        st.dataframe(pd.DataFrame(rows).head(10), hide_index=True, use_container_width=True)
+    download_rows(rows, stem)
 
 
 def download_rows(rows: list[dict], stem: str):
@@ -186,6 +216,15 @@ st.markdown(
       div.stButton > button:hover, div.stDownloadButton > button:hover {
         background:#00401e; color:#ffffff;
       }
+      /* "How it works" step cards (bento-style) */
+      .how-grid { display:grid; grid-template-columns:repeat(3,1fr); gap:14px; margin:18px 0 6px; }
+      .step-card { background:#f0f4f5; border-radius:12px; padding:18px; border:1px solid #e8edee; }
+      .step-card .num { color:#005EB8; font-weight:700; font-size:12px; letter-spacing:.6px; }
+      .step-card h4 { margin:8px 0 4px; font-size:16px; color:#212b32; }
+      .step-card p { margin:0; font-size:13.5px; color:#4c6272; line-height:1.45; }
+      .step-card svg { width:28px; height:28px; stroke:#005EB8; fill:none; stroke-width:2;
+                       stroke-linecap:round; stroke-linejoin:round; }
+      @media (max-width:800px){ .how-grid { grid-template-columns:1fr; } }
     </style>
     <div class="nhs-header"><span class="brand">NoteGuard</span></div>
     <p class="nhs-tagline">Every clinical note is someone's story — NoteGuard keeps the person safe,
@@ -215,6 +254,46 @@ with st.sidebar:
                       else "Pseudonymise (realistic, patient-consistent)")
 
 det, llm_on = active_detector(detector, use_llm)
+
+# ----- onboarding: how it works -----
+st.markdown(
+    """
+    <div class="how-grid">
+      <div class="step-card">
+        <svg viewBox="0 0 24 24"><path d="M12 16V4M6 10l6-6 6 6"/><path d="M4 20h16"/></svg>
+        <div class="num">STEP 1</div>
+        <h4>Add your data</h4>
+        <p>Paste a clinical note, upload a .txt / .csv / .pdf, or try a sample — or pick a clinical
+        domain in the second tab.</p>
+      </div>
+      <div class="step-card">
+        <svg viewBox="0 0 24 24"><path d="M12 3l7 3v6c0 4-3 7-7 8-4-1-7-4-7-8V6z"/><path d="M9 12l2 2 4-4"/></svg>
+        <div class="num">STEP 2</div>
+        <h4>We find &amp; remove identifiers</h4>
+        <p>Transparent rules plus a clinical NER model detect names, NHS numbers, dates and more, then
+        redact or pseudonymise them — all in memory.</p>
+      </div>
+      <div class="step-card">
+        <svg viewBox="0 0 24 24"><path d="M12 4v12M6 10l6 6 6-6"/><path d="M4 20h16"/></svg>
+        <div class="num">STEP 3</div>
+        <h4>Review &amp; download</h4>
+        <p>See what was detected on a chart, review every change, then download the de-identified data.</p>
+      </div>
+    </div>
+    """,
+    unsafe_allow_html=True,
+)
+
+with st.expander("What is the optional LLM assurance pass?"):
+    st.markdown(
+        "NoteGuard removes identifiers with transparent rules and a clinical NER model. You can "
+        "optionally switch on an **LLM assurance pass** (toggle in the left sidebar): a language model "
+        "takes a *second look* and flags anything the engine might have missed.\n\n"
+        "- It is a **safety net, not the decision-maker** — its suggestions are always marked for human "
+        "review, never auto-trusted.\n"
+        "- It is **off by default** and stays inert unless a free API key is configured.\n"
+        "- Your text is sent to the model **only while the toggle is on**."
+    )
 
 tab_try, tab_domain = st.tabs(["De-identify your data", "Get data by domain"])
 
@@ -276,7 +355,8 @@ with tab_try:
             with st.spinner(f"De-identifying {len(records)} rows…"):
                 st.session_state["upload_rows"] = deidentify_rows(records, method, det)
         if st.session_state.get("upload_rows"):
-            download_rows(st.session_state["upload_rows"], "noteguard_upload")
+            rows, counts = st.session_state["upload_rows"]
+            render_batch_result(rows, counts, "noteguard_upload")
 
 # ---------------------------------------------------------------- Tab 2: get data by domain
 with tab_domain:
@@ -298,17 +378,15 @@ with tab_domain:
             with st.spinner("Loading notes, filtering by domain, de-identifying…"):
                 pool = load_notes(limit=n_pool)
                 cohort = filter_by_domain(pool, domain, limit=n_cap)
-                counts = domain_counts(pool)
-                rows = deidentify_rows(cohort, method, det)
-                st.session_state["dom_rows"] = rows
-                st.session_state["dom_counts"] = counts
-        if st.session_state.get("dom_counts"):
+                st.session_state["dom_cohort_counts"] = domain_counts(pool)
+                st.session_state["dom_rows"] = deidentify_rows(cohort, method, det)
+        if st.session_state.get("dom_cohort_counts"):
             st.caption("Cohort sizes in the scanned pool (overlap = comorbidity): "
-                       + " · ".join(f"{d}: {c}" for d, c in st.session_state["dom_counts"].items()))
+                       + " · ".join(f"{d}: {c}" for d, c in st.session_state["dom_cohort_counts"].items()))
         if st.session_state.get("dom_rows") is not None:
-            rows = st.session_state["dom_rows"]
+            rows, counts = st.session_state["dom_rows"]
             if rows:
-                download_rows(rows, f"noteguard_{domain.replace(' ', '_')}_nhs")
+                render_batch_result(rows, counts, f"noteguard_{domain.replace(' ', '_')}_nhs")
             else:
                 st.warning("No notes matched this domain in the scanned pool — try scanning more notes.")
 
@@ -332,9 +410,9 @@ with tab_domain:
                 matched = [(rid, txt) for rid, txt in raw if note_matches_domain(txt, domain)]
                 st.session_state["ext_rows"] = deidentify_rows(matched, method, det)
         if st.session_state.get("ext_rows") is not None:
-            rows = st.session_state["ext_rows"]
+            rows, counts = st.session_state["ext_rows"]
             if rows:
-                download_rows(rows, f"noteguard_{domain.replace(' ', '_')}_{entry.key}")
+                render_batch_result(rows, counts, f"noteguard_{domain.replace(' ', '_')}_{entry.key}")
             else:
                 st.warning("No rows matched this domain in the fetched sample — fetch more rows.")
         if linkonly:
