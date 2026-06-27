@@ -169,9 +169,32 @@ def download_rows(rows: list[dict], stem: str):
                        file_name=f"{stem}.csv", mime="text/csv", use_container_width=True)
 
 
-st.title("NoteGuard")
-st.caption("Detect and remove patient and clinician identifiers from clinical text, "
-           "so data can be shared and analysed safely.")
+st.markdown(
+    """
+    <style>
+      .nhs-header {
+        background:#005EB8; padding:18px 24px; border-radius:6px;
+        font-family: Arial, Helvetica, sans-serif;
+      }
+      .nhs-header .brand { color:#ffffff; font-weight:700; font-size:32px; letter-spacing:.3px; }
+      .nhs-tagline { color:#212b32; font-size:18px; font-style:italic; margin:16px 0 2px; }
+      .nhs-sub { color:#4c6272; font-size:14px; margin-bottom:4px; }
+      /* NHS green action buttons */
+      div.stButton > button, div.stDownloadButton > button {
+        background:#007f3b; color:#ffffff; border:0; border-radius:4px; font-weight:600;
+      }
+      div.stButton > button:hover, div.stDownloadButton > button:hover {
+        background:#00401e; color:#ffffff;
+      }
+    </style>
+    <div class="nhs-header"><span class="brand">NoteGuard</span></div>
+    <p class="nhs-tagline">Every clinical note is someone's story — NoteGuard keeps the person safe,
+    so their data can still help others.</p>
+    <p class="nhs-sub">Detect and remove patient and clinician identifiers from clinical text,
+    so data can be shared and analysed safely.</p>
+    """,
+    unsafe_allow_html=True,
+)
 
 detector, NOTES = load_engine()
 

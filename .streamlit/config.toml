@@ -2,3 +2,11 @@
 # (e.g. "C" = Clear cache, "R" = Rerun), so visitors can't trigger them.
 [client]
 toolbarMode = "viewer"
+
+# NHS.UK-inspired palette (NHS Blue primary, NHS light-grey panels, NHS near-black text).
+[theme]
+primaryColor = "#005EB8"
+backgroundColor = "#ffffff"
+secondaryBackgroundColor = "#f0f4f5"
+textColor = "#212b32"
+font = "sans serif"
